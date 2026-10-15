@@ -20,6 +20,7 @@ function getSeverityVariant(severity: IncidentSeverity): 'success' | 'warning' |
 }
 
 function formatIncidentType(type: string): string {
+  if (!type) return 'Unknown';
   return type.charAt(0).toUpperCase() + type.slice(1);
 }
 

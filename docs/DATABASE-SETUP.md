@@ -1,144 +1,89 @@
-# CityPulse AI - Database Setup Guide
+# CityPulse Database Setup Guide
 
-**Status:** Ready for Configuration  
-**Database:** Supabase PostgreSQL with PostGIS  
-**Date:** October 9, 2026
+Complete guide for setting up the Supabase database for CityPulse AI.
 
----
+## Overview
 
-## Prerequisites
+CityPulse uses **Supabase** (PostgreSQL + PostGIS) with the following features:
+- PostGIS for geographic queries
+- Row Level Security (RLS) for access control
+- Automatic timestamp triggers
+- Foreign key relationships
+- Check constraints for data validation
 
-1. **Supabase Account**: Sign up at [supabase.com](https://supabase.com)
-2. **Supabase Project**: Create a new project (note: takes ~2 minutes to provision)
-3. **Environment Variables**: Have your `.env.local` file ready
+## Quick Setup (3 Steps)
 
----
+### 1. Create Supabase Project
 
-## Step 1: Get Supabase Credentials
+1. Go to [https://app.supabase.com](https://app.supabase.com)
+2. Click **New Project**
+3. Choose organization, name, database password, region
+4. Wait for project creation (~2 minutes)
 
-### A. Navigate to Project Settings
+### 2. Run Schema SQL
 
-1. Open your Supabase project dashboard
-2. Click **Settings** (gear icon in sidebar)
-3. Click **API** in the settings menu
+1. Open your project → **SQL Editor** (left sidebar)
+2. Copy the entire contents of `supabase/schema.sql`
+3. Paste into SQL Editor
+4. Click **Run** (or press Cmd/Ctrl + Enter)
+5. Verify success: "Success. No rows returned"
 
-### B. Copy Required Values
+### 3. Setup Row Level Security
 
-You'll need three values:
+1. In SQL Editor, create a new query
+2. Copy contents of `supabase/rls_policies.sql`
+3. Paste and click **Run**
+4. Verify policies exist: Table Editor → any table → Policies tab
 
-1. **Project URL**
-   - Found under "Project URL"
-   - Example: `https://abcdefghijklmnop.supabase.co`
+### 4. (Optional) Add Sample Data
 
-2. **Anon/Public Key**
-   - Found under "Project API keys" → `anon` `public`
-   - This key is safe for browser use
+1. In SQL Editor, create a new query
+2. Copy contents of `supabase/seed.sql`
+3. Paste and click **Run**
+4. Verify: Table Editor → buses → should see 6 buses
 
-3. **Service Role Key** ⚠️
-   - Found under "Project API keys" → `service_role` `secret`
-   - **NEVER expose this to the browser**
-   - Only use in server-side code
+## Database Schema
 
----
+### Core Tables
 
-## Step 2: Configure Environment Variables
-
-### Update `.env.local`
-
-```bash
-# Supabase Configuration (replace with your values)
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
-
-# Optional: AI Service (for future)
-AI_SERVICE_URL=http://localhost:8000
-AI_SERVICE_API_KEY=your-ai-key-here
-
-# Optional: Gemini API (for future)
-GEMINI_API_KEY=your-gemini-key-here
-```
-
-**Important:**
-- Replace `your-project-id`, `your-anon-key-here`, and `your-service-role-key-here` with actual values
-- Do NOT commit `.env.local` to git (already in `.gitignore`)
-- The service role key must remain server-only
-
----
-
-## Step 3: Run Database Schema
-
-### Option A: Using Supabase SQL Editor (Recommended)
-
-1. Open your Supabase project dashboard
-2. Click **SQL Editor** in the sidebar
-3. Click **New Query**
-4. Open `supabase/schema.sql` from this project
-5. **Copy the entire file contents**
-6. **Paste into the SQL Editor**
-7. Click **Run** (or press Cmd/Ctrl + Enter)
-
-**Expected output:**
-```
-Success. No rows returned
-```
-
-This means the schema was created successfully!
-
-### Option B: Using Supabase CLI (Advanced)
-
-If you have Supabase CLI installed:
-
-```bash
-# Initialize Supabase in project (if not done)
-supabase init
-
-# Link to your project
-supabase link --project-ref your-project-id
-
-# Run migrations
-supabase db push
-```
-
----
-
-## Step 4: Verify Schema Creation
-
-### Check Tables
-
-Run this query in the SQL Editor:
+#### `buses`
+Public transport fleet serving as mobile sensing units.
 
 ```sql
-SELECT table_name 
-FROM information_schema.tables 
-WHERE table_schema = 'public'
-ORDER BY table_name;
+CREATE TABLE buses (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    bus_code TEXT NOT NULL UNIQUE,           -- e.g., "DL-1234"
+    route_name TEXT NOT NULL,                -- e.g., "Route 52"
+    status TEXT NOT NULL DEFAULT 'offline',  -- online|offline|maintenance
+    last_latitude DECIMAL(10, 8),            -- Geographic coordinate
+    last_longitude DECIMAL(11, 8),           -- Geographic coordinate
+    last_seen_at TIMESTAMPTZ,                -- Last ping timestamp
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ```
 
-**Expected tables:**
-- `buses`
-- `departments`
-- `incidents`
-- `incident_observations`
-- `work_orders`
+**Indexes:**
+- `idx_buses_status` - Filter by online/offline
+- `idx_buses_bus_code` - Quick lookup by bus code
+- `idx_buses_location` (GIST) - Geographic queries
+- `idx_buses_last_seen` - Recent activity queries
 
-### Check Row Level Security
+---
+
+#### `departments`
+Municipal departments responsible for incident resolution.
 
 ```sql
-SELECT tablename, rowsecurity 
-FROM pg_tables 
-WHERE schemaname = 'public';
+CREATE TABLE departments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL UNIQUE,
+    contact_email TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ```
 
-**All tables should show `rowsecurity = true`**
-
-### Check Sample Departments
-
-```sql
-SELECT * FROM departments;
-```
-
-**Expected rows:**
+**Seeded departments:**
 - Roads & Infrastructure
 - Traffic Management
 - Public Works
@@ -146,363 +91,367 @@ SELECT * FROM departments;
 
 ---
 
-## Step 5: Load Seed Data (Optional)
-
-To populate with sample incidents and buses:
-
-1. Open `supabase/seed.sql`
-2. Copy the entire contents
-3. Paste in SQL Editor
-4. Run the query
-
-**This creates:**
-- 8 sample buses
-- 10 sample incidents
-- 3 sample work orders
-- 1 sample observation
-
----
-
-## Step 6: Configure Storage Bucket
-
-For evidence images (detection photos):
-
-1. Go to **Storage** in Supabase dashboard
-2. Click **New Bucket**
-3. Name: `incidents`
-4. **Public bucket:** No (keep private for now)
-5. Click **Create bucket**
-
-### Set Bucket Policies
-
-Navigate to **Storage** → `incidents` bucket → **Policies**
-
-Create a policy:
-
-**Name:** Authenticated users can upload  
-**Operation:** INSERT  
-**Policy:**
-```sql
-(auth.role() = 'authenticated')
-```
-
-**Name:** Authenticated users can read  
-**Operation:** SELECT  
-**Policy:**
-```sql
-(auth.role() = 'authenticated')
-```
-
----
-
-## Step 7: Verify Application Connection
-
-### A. Restart Development Server
-
-```bash
-# Kill existing server if running
-# Then restart
-npm run dev
-```
-
-### B. Test Health Check
-
-Open: http://localhost:3000/api/health
-
-**Expected response (success):**
-```json
-{
-  "status": "ok",
-  "supabase": "connected",
-  "message": "Database connection successful",
-  "environment": "configured",
-  "tables_verified": true,
-  "timestamp": "2026-10-09T..."
-}
-```
-
-**If you see an error:**
-- Check environment variables in `.env.local`
-- Verify schema was run successfully
-- Check Supabase project is active (not paused)
-
-### C. Test Dashboard
-
-Open: http://localhost:3000/dashboard
-
-**If database is connected:**
-- No yellow "Database Not Configured" warning
-- Stats show real data from seed.sql
-- No "Demo Data" badges
-
-**If still showing demo data:**
-- Check browser console for errors
-- Verify health check endpoint returns "ok"
-- Check Supabase dashboard logs for query errors
-
----
-
-## Database Schema Overview
-
-### Tables
-
-#### `buses`
-Public transport fleet serving as mobile sensors.
-
-**Key Fields:**
-- `bus_code` - Unique identifier (e.g., "DL-1234")
-- `route_name` - Route assignment
-- `status` - online | offline | maintenance
-- `last_latitude`, `last_longitude` - GPS coordinates
-- `last_seen_at` - Last ping timestamp
-
 #### `incidents`
-Detected road damage and traffic incidents.
+Road damage and traffic incidents detected by AI.
 
-**Key Fields:**
-- `event_type` - pothole | crack | flooding | debris | congestion | accident
-- `severity` - low | medium | high | critical
-- `confidence` - AI detection confidence (0-100%)
-- `verification_status` - detected → verified → assigned → in_progress → resolved
-- `latitude`, `longitude` - Incident location
-- `bus_id` - Bus that detected it (foreign key)
-- `evidence_path` - Path to detection image
+```sql
+CREATE TABLE incidents (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_type TEXT NOT NULL,                -- pothole|crack|flooding|debris|congestion|accident
+    severity TEXT NOT NULL,                  -- low|medium|high|critical
+    confidence DECIMAL(5, 2) NOT NULL,       -- AI confidence 0-100%
+    latitude DECIMAL(10, 8) NOT NULL,
+    longitude DECIMAL(11, 8) NOT NULL,
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    bus_id UUID REFERENCES buses(id),
+    evidence_path TEXT,                      -- Storage path to image
+    verification_status TEXT NOT NULL,       -- detected|verified|rejected|assigned|in_progress|resolved
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
 
-#### `departments`
-Municipal departments responsible for repairs.
+**Indexes:**
+- `idx_incidents_event_type` - Filter by type
+- `idx_incidents_severity` - Filter by severity
+- `idx_incidents_verification_status` - Filter by status
+- `idx_incidents_detected_at` - Sort by detection time
+- `idx_incidents_location` (GIST) - Geographic queries
+- `idx_incidents_status_severity` (composite) - Dashboard queries
 
-**Key Fields:**
-- `name` - Department name (unique)
-- `contact_email` - Contact information
+**Workflow:**
+```
+detected → verified/rejected → assigned → in_progress → resolved
+```
+
+---
 
 #### `work_orders`
-Maintenance work orders for incidents.
+Maintenance work orders for verified incidents.
 
-**Key Fields:**
-- `incident_id` - Related incident (foreign key)
-- `department_id` - Assigned department (foreign key)
-- `status` - pending | assigned | in_progress | completed | cancelled
-- `priority` - low | medium | high | urgent
-- `assigned_to` - Personnel assigned
-- `resolution_notes` - Completion notes
+```sql
+CREATE TABLE work_orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    incident_id UUID NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    department_id UUID NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
+    assigned_to TEXT,                        -- Person/team assigned
+    status TEXT NOT NULL DEFAULT 'pending',  -- pending|assigned|in_progress|completed|cancelled
+    priority TEXT NOT NULL DEFAULT 'medium', -- low|medium|high|urgent
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    resolution_notes TEXT
+);
+```
+
+**Indexes:**
+- `idx_work_orders_incident_id` - Join with incidents
+- `idx_work_orders_department_id` - Filter by department
+- `idx_work_orders_status` - Filter by status
+- `idx_work_orders_priority` - Sort by urgency
+
+---
 
 #### `incident_observations`
 Multiple detections of the same incident by different buses.
 
-**Key Fields:**
-- `incident_id` - Parent incident (foreign key)
-- `bus_id` - Bus that made observation (foreign key)
-- `observed_at` - Observation timestamp
-- `confidence` - Detection confidence
-- `latitude`, `longitude` - Observation location
-
-### Relationships
-
-```
-buses ──┬─> incidents ──┬─> work_orders
-        │               └─> incident_observations
-        └─> incident_observations
-
-departments ──> work_orders
+```sql
+CREATE TABLE incident_observations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    incident_id UUID NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    bus_id UUID NOT NULL REFERENCES buses(id) ON DELETE SET NULL,
+    observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    latitude DECIMAL(10, 8) NOT NULL,
+    longitude DECIMAL(11, 8) NOT NULL,
+    confidence DECIMAL(5, 2) NOT NULL,
+    evidence_path TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ```
 
-### Indexes
+**Purpose:** Strengthen incident confidence when multiple buses detect the same issue.
 
-All tables have proper indexes for:
-- Primary keys (UUID)
-- Foreign keys
-- Frequently queried fields (status, timestamps)
-- Geographic data (PostGIS GIST indexes)
+---
+
+### Database Functions
+
+#### `update_updated_at_column()`
+Automatic trigger that updates `updated_at` timestamp on row changes.
+
+Applied to: `buses`, `incidents`, `work_orders`
+
+#### `calculate_distance(lat1, lon1, lat2, lon2)`
+Calculate distance in meters between two geographic points using PostGIS.
+
+```sql
+SELECT calculate_distance(28.6139, 77.2090, 28.7041, 77.1025);
+-- Returns: distance in meters
+```
 
 ---
 
 ## Row Level Security (RLS)
 
-### Current Policies (MVP)
+### Access Model
 
-**All Tables:**
-- ✅ RLS Enabled
-- ✅ Authenticated users can READ all data
-- ✅ Authenticated users can CREATE incidents/work orders
-- ✅ Authenticated users can UPDATE incidents/work orders
-- ❌ DELETE restricted (audit trail)
-- ❌ Public access blocked
+CityPulse uses **public read, authenticated write** model:
 
-### Future Enhancements
+- **Anonymous (anon) role**: Read-only access to all tables
+- **Authenticated role**: Read + write access
+- **Service role**: Bypasses all RLS (admin operations)
 
-Role-based policies will be added:
+### Policies Applied
 
-- **Operators**: Verify incidents
-- **Analysts**: Assign to departments
-- **Supervisors**: Create work orders
-- **Admins**: Full access
-
----
-
-## Data Access Functions
-
-### Server-Side Functions (lib/db/)
-
-All data access goes through typed functions:
-
-#### Incidents (`lib/db/incidents.ts`)
-- `getIncidents(query)` - List with filters
-- `getIncidentById(id)` - Single incident with relations
-- `createIncident(data)` - Create new incident
-- `updateIncident(data)` - Update status/verification
-- `getIncidentStats()` - Dashboard statistics
-- `getRecentIncidents(limit)` - Latest incidents
-
-#### Buses (`lib/db/buses.ts`)
-- `getBuses(query)` - List with filters
-- `getBusById(id)` - Single bus with incidents
-- `getBusStats()` - Fleet statistics
-- `getBusesWithDetectionCounts()` - Buses + detection counts
-
-### Validation (lib/schemas/)
-
-All inputs validated with Zod:
-
-- `incidentSchema` - Incident structure
-- `createIncidentSchema` - New incident validation
-- `updateIncidentSchema` - Update validation
-- `busSchema`, `workOrderSchema`, etc.
-
----
-
-## Common Issues & Solutions
-
-### Issue: "Failed to fetch incidents" error
-
-**Cause:** Schema not run or RLS blocking access
-
-**Solution:**
+#### Buses
 ```sql
--- Check if tables exist
-SELECT * FROM incidents LIMIT 1;
+-- Public can view all buses
+CREATE POLICY "Public read access to buses" ON buses
+    FOR SELECT TO anon, authenticated USING (true);
 
--- Check RLS is enabled
-SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public';
-
--- Verify you're authenticated (run in SQL Editor)
-SELECT auth.uid();  -- Should return a UUID
+-- Authenticated can update bus status (IoT devices)
+CREATE POLICY "Authenticated write access to buses" ON buses
+    FOR UPDATE TO authenticated USING (true);
 ```
 
-### Issue: Dashboard shows demo data despite schema
-
-**Cause:** Environment variables not loaded or connection failed
-
-**Solution:**
-1. Restart dev server: `npm run dev`
-2. Check `.env.local` has correct values
-3. Test health endpoint: `/api/health`
-4. Check browser console for errors
-
-### Issue: "Service role key" error in browser
-
-**Cause:** Trying to use service role key in client component
-
-**Solution:**
-- Never import `createAdminClient()` in client components
-- Only use `createClient()` from `lib/supabase/client.ts` in browser
-- Service role functions only in API routes or Server Components
-
-### Issue: PostGIS extension error
-
-**Cause:** PostGIS not enabled in Supabase project
-
-**Solution:**
+#### Incidents
 ```sql
--- Run in SQL Editor
-CREATE EXTENSION IF NOT EXISTS "postgis";
+-- Public can view all incidents
+CREATE POLICY "Public read access to incidents" ON incidents
+    FOR SELECT TO anon, authenticated USING (true);
+
+-- Authenticated can create incidents (AI detection)
+CREATE POLICY "Authenticated write access to incidents" ON incidents
+    FOR INSERT TO authenticated WITH CHECK (true);
+
+-- Authenticated can update incident status
+CREATE POLICY "Authenticated update access to incidents" ON incidents
+    FOR UPDATE TO authenticated USING (true);
 ```
 
-### Issue: No data in dropdown/select fields
+#### Work Orders & Departments
+Similar pattern: Public read, authenticated write.
 
-**Cause:** Seed data not loaded
+### Why Public Read Access?
 
-**Solution:**
-1. Run `supabase/seed.sql` in SQL Editor
-2. Verify with: `SELECT COUNT(*) FROM incidents;`
+CityPulse is a **public monitoring dashboard** for transparency:
+- Citizens can view road conditions
+- No sensitive personal data
+- Incidents are public infrastructure issues
+- Work order status is transparent
 
----
-
-## Security Checklist
-
-Before going to production:
-
-- [ ] Environment variables properly set
-- [ ] `.env.local` in `.gitignore` (already done)
-- [ ] Service role key never in browser code
-- [ ] RLS enabled on all tables
-- [ ] Storage bucket policies configured
-- [ ] HTTPS only (enforced by Supabase)
-- [ ] Rate limiting configured (optional)
-- [ ] Audit logs enabled (optional)
+**For Production with User Auth:**
+If you implement user authentication later:
+1. Remove `anon` from SELECT policies
+2. Add `auth.uid()` checks to policies
+3. Implement role-based access (e.g., only dept managers can update work orders)
 
 ---
 
-## Testing the Setup
+## Environment Variables
 
-### 1. Health Check
+### Required for Database Access
+
 ```bash
-curl http://localhost:3000/api/health
+# .env.local
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
 ```
 
-Expected: `{"status":"ok","supabase":"connected"}`
+### Optional for Admin Operations
 
-### 2. Query Incidents
-Open SQL Editor:
+```bash
+# Only needed if using createAdminClient() for operations that bypass RLS
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+```
+
+**Where to find these:**
+1. Go to Project Settings → API
+2. Copy **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
+3. Copy **anon public** key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+4. Copy **service_role** key → `SUPABASE_SERVICE_ROLE_KEY` (keep secret!)
+
+---
+
+## Verification Steps
+
+### 1. Check Tables Exist
+
 ```sql
-SELECT 
-  i.event_type,
-  i.severity,
-  i.verification_status,
-  b.bus_code
-FROM incidents i
-LEFT JOIN buses b ON i.bus_id = b.id
-ORDER BY i.detected_at DESC
-LIMIT 10;
+SELECT table_name 
+FROM information_schema.tables 
+WHERE table_schema = 'public'
+  AND table_type = 'BASE TABLE';
 ```
 
-### 3. Check Dashboard
-Visit: http://localhost:3000/dashboard
+Expected: `buses`, `departments`, `incidents`, `work_orders`, `incident_observations`
 
-Should show:
-- Real stats (not demo values)
-- No warning banner
-- Incidents from database
+### 2. Verify Extensions
+
+```sql
+SELECT extname FROM pg_extension WHERE extname IN ('uuid-ossp', 'postgis');
+```
+
+Expected: Both extensions installed
+
+### 3. Check Departments Seeded
+
+```sql
+SELECT name FROM departments ORDER BY name;
+```
+
+Expected: 4 departments
+
+### 4. Verify RLS Enabled
+
+```sql
+SELECT tablename, rowsecurity 
+FROM pg_tables 
+WHERE schemaname = 'public';
+```
+
+Expected: `rowsecurity = true` for all tables
+
+### 5. Test Policies
+
+```sql
+-- Switch to anon role
+SET ROLE anon;
+SELECT COUNT(*) FROM buses; -- Should work (read allowed)
+
+-- Try insert (should fail - anon can't write)
+INSERT INTO buses (bus_code, route_name, status) 
+VALUES ('TEST-001', 'Test Route', 'online');
+-- Expected error: "new row violates row-level security policy"
+
+RESET ROLE;
+```
+
+---
+
+## Common Issues
+
+### "relation does not exist"
+
+**Cause:** Schema not executed or tables not created  
+**Fix:** Run `supabase/schema.sql` in SQL Editor
+
+### "permission denied for table"
+
+**Cause:** RLS policies not set up  
+**Fix:** Run `supabase/rls_policies.sql`
+
+### "function ST_Distance does not exist"
+
+**Cause:** PostGIS extension not enabled  
+**Fix:** Run `CREATE EXTENSION IF NOT EXISTS "postgis";`
+
+### API returns empty arrays
+
+**Cause:** Tables exist but empty, or RLS blocking queries  
+**Fix:** 
+1. Run `supabase/seed.sql` for sample data
+2. Verify policies allow anon SELECT
+3. Check browser console for specific errors
+
+### "uuid_generate_v4() does not exist"
+
+**Cause:** UUID extension not enabled  
+**Fix:** Run `CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`
+
+---
+
+## Storage Setup (Optional)
+
+For incident evidence images:
+
+1. Go to **Storage** in Supabase dashboard
+2. Click **New Bucket**
+3. Name: `incidents`
+4. Public: Yes (for public dashboard viewing)
+5. Create bucket
+
+**Storage policies:**
+```sql
+-- Allow public to view images
+CREATE POLICY "Public can view incident images"
+ON storage.objects FOR SELECT
+TO anon, authenticated
+USING (bucket_id = 'incidents');
+
+-- Allow authenticated to upload
+CREATE POLICY "Authenticated can upload images"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'incidents');
+```
+
+**Usage in app:**
+```typescript
+const { data, error } = await supabase.storage
+  .from('incidents')
+  .upload(`${incidentId}.jpg`, file);
+```
+
+---
+
+## Maintenance
+
+### Backup Database
+
+Via Supabase Dashboard:
+1. Go to Database → Backups
+2. Scheduled backups run automatically
+3. Manual backup: Click "Create backup"
+
+### Monitor Performance
+
+1. Go to Database → Query Performance
+2. Check slow queries
+3. Add indexes if needed
+
+### View Logs
+
+1. Go to Logs → Database
+2. Filter by severity
+3. Check for errors or slow queries
+
+---
+
+## Migration Strategy
+
+For production updates, use migration files:
+
+```bash
+supabase/migrations/
+  001_initial_schema.sql       # Initial setup
+  002_add_notifications.sql    # Future additions
+  003_alter_incidents.sql      # Schema changes
+```
+
+**Apply migrations:**
+```bash
+# Local development
+supabase db reset
+
+# Production via CLI
+supabase db push
+```
 
 ---
 
 ## Next Steps
 
-After database is configured:
-
-1. **Authentication**: Implement login/signup pages
-2. **Incident Management**: Build full CRUD interface
-3. **GIS Map**: Integrate Leaflet for spatial visualization
-4. **Work Orders**: Complete workflow system
-5. **Analytics**: Build comprehensive dashboards
-
----
-
-## Support
-
-### Supabase Documentation
-- [PostgreSQL Functions](https://supabase.com/docs/guides/database/functions)
-- [Row Level Security](https://supabase.com/docs/guides/auth/row-level-security)
-- [PostGIS](https://supabase.com/docs/guides/database/extensions/postgis)
-
-### Project Files
-- Schema: `supabase/schema.sql`
-- Seed Data: `supabase/seed.sql`
-- Migrations: `supabase/migrations/`
-- Data Functions: `lib/db/`
-- Validation: `lib/schemas/`
+1. ✅ Database schema created
+2. ✅ RLS policies configured
+3. ✅ Sample data loaded (optional)
+4. 🔄 Connect app to database (`.env.local`)
+5. 🔄 Verify at `/api/health`
+6. 🚀 Start building features!
 
 ---
 
-**Setup Status:** ⚠️ Requires Manual Configuration
-
-**Once completed, the dashboard will automatically switch from demo data to live database data.**
+For questions or issues, check:
+- [Supabase Documentation](https://supabase.com/docs)
+- [PostGIS Documentation](https://postgis.net/documentation/)
+- Project README

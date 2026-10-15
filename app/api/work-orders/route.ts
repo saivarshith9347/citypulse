@@ -7,10 +7,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     
     const query: any = {};
+    if (searchParams.get('incident_id')) query.incident_id = searchParams.get('incident_id');
+    if (searchParams.get('department_id')) query.department_id = searchParams.get('department_id');
     if (searchParams.get('status')) query.status = searchParams.get('status');
     if (searchParams.get('priority')) query.priority = searchParams.get('priority');
-    if (searchParams.get('department_id')) query.department_id = searchParams.get('department_id');
-    if (searchParams.get('incident_id')) query.incident_id = searchParams.get('incident_id');
     if (searchParams.get('limit')) query.limit = parseInt(searchParams.get('limit')!);
     if (searchParams.get('offset')) query.offset = parseInt(searchParams.get('offset')!);
 
